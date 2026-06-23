@@ -1,0 +1,29 @@
+proxmox:
+  host: node-a-prox.lab.home        # Proxmox node hostname or IP
+  ssh_user: root
+  ssh_key: /home/parker/.ssh/id_ed25519
+
+netbox:
+  url: https://netbox.lab.home
+  token: your-netbox-api-token-here
+  cluster_name: proxmox             # Name of the virtualization cluster in NetBox
+
+adguard:
+  url: http://adguard.lab.home:3000
+  username: admin
+  password: your-adguard-password-here
+
+npmplus:
+  url: http://npmplus.lab.home:81
+  email: admin@example.com
+  password: your-npmplus-password-here
+
+ssh_keys:
+  - /home/parker/.ssh/id_ed25519.pub              # personal PC key
+  - /home/parker/.homelab-updates/id_ed25519.pub  # ansible server key
+
+defaults:
+  domain_suffix: lab.home
+  cpu_cores: 2
+  ram_mb: 2048
+  disk_gb: 10

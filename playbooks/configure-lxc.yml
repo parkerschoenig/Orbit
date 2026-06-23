@@ -1,0 +1,73 @@
+---
+# Usage:
+#   ansible-playbook playbooks/configure-lxc.yml \
+#     -i <ip>, \
+#     -e "lxc_ip=<ip> ssh_keys_file=/tmp/authorized_keys"
+#
+# Variables:
+#   lxc_ip         - IP of the new LXC (also used as inventory host)
+#   ssh_keys_file  - local path to a file containing all authorized public keys
+#   permit_root    - "prohibit-password" (default) or "yes"
+
+- name: Harden SSH on new LXC
+  hosts: all
+  gather_facts: false
+  vars:
+    permit_root: "prohibit-password"
+  tasks:
+    - name: Wait for SSH to become available
+      ansible.builtin.wait_for_connection:
+        timeout: 120
+        sleep: 5
+
+    - name: Ensure .ssh directory exists
+      ansible.builtin.file:
+        path: /root/.ssh
+        state: directory
+        mode: "0700"
+        owner: root
+        group: root
+
+    - name: Deploy authorized_keys
+      ansible.builtin.copy:
+        src: "{{ ssh_keys_file }}"
+        dest: /root/.ssh/authorized_keys
+        mode: "0600"
+        owner: root
+        group: root
+
+    - name: Disable password authentication
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?PasswordAuthentication"
+        line: "PasswordAuthentication no"
+        state: present
+      notify: Restart sshd
+
+    - name: Set PermitRootLogin
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?PermitRootLogin"
+        line: "PermitRootLogin {{ permit_root }}"
+        state: present
+      notify: Restart sshd
+
+    - name: Remove any drop-in configs that re-enable password auth
+      ansible.builtin.find:
+        paths: /etc/ssh/sshd_config.d/
+        patterns: "*.conf"
+      register: dropin_files
+
+    - name: Ensure drop-in files don't override PasswordAuthentication
+      ansible.builtin.replace:
+        path: "{{ item.path }}"
+        regexp: "^(PasswordAuthentication\\s+yes)"
+        replace: "# \\1  # disabled by ansible"
+      loop: "{{ dropin_files.files }}"
+      notify: Restart sshd
+
+  handlers:
+    - name: Restart sshd
+      ansible.builtin.service:
+        name: "{{ 'ssh' if ansible_os_family == 'Debian' else 'sshd' }}"
+        state: restarted
