@@ -102,6 +102,15 @@ def phase1_gather(cfg: dict) -> dict:
         sys.exit(0)
     helper_url = helper_url.strip()
 
+    proxmox_node = questionary.text(
+        "Proxmox node FQDN (parent host for this LXC):",
+        default=cfg.get("proxmox", {}).get("host", ""),
+        validate=validate_fqdn,
+    ).ask()
+    if proxmox_node is None:
+        sys.exit(0)
+    proxmox_node = proxmox_node.strip().lower()
+
     default_suffix = cfg.get("defaults", {}).get("domain_suffix", "")
     fqdn_hint = f"  (e.g. myapp.{default_suffix})" if default_suffix else ""
     fqdn = questionary.text(
@@ -115,6 +124,7 @@ def phase1_gather(cfg: dict) -> dict:
 
     return {
         "helper_url": helper_url,
+        "proxmox_node": proxmox_node,
         "fqdn": fqdn,
         "hostname": hostname,
     }
@@ -287,6 +297,7 @@ def show_summary(meta: dict, ip_info: dict, hw: dict, npm_info: dict):
     table.add_column("Value")
 
     table.add_row("Helper script", meta["helper_url"])
+    table.add_row("Proxmox node", meta["proxmox_node"])
     table.add_row("FQDN", meta["fqdn"])
     table.add_row("IP", ip_info["ip_cidr"])
     table.add_row("Gateway", ip_info["gateway"])
@@ -320,9 +331,9 @@ def phase2_create_lxc(cfg: dict, meta: dict, ip_info: dict, hw: dict) -> bool:
         "SSH_ROOT_PW": hw["root_password"],
     }
 
-    console.print(f"  Connecting to Proxmox at [bold]{prox_cfg['host']}[/bold]…")
+    console.print(f"  Connecting to Proxmox at [bold]{meta['proxmox_node']}[/bold]…")
     try:
-        ssh = ProxmoxSSH(prox_cfg["host"], prox_cfg["ssh_user"], prox_cfg["ssh_key"])
+        ssh = ProxmoxSSH(meta["proxmox_node"], prox_cfg["ssh_user"], prox_cfg["ssh_key"])
     except Exception as e:
         console.print(f"[red]SSH connection failed:[/red] {e}")
         return False
@@ -382,17 +393,17 @@ def phase3_npmplus(cfg: dict, fqdn: str, ip_only: str, npm_info: dict):
         console.print(f"    [red]NPMplus error:[/red] {e}")
 
 
-def phase3_netbox(cfg: dict, fqdn: str, ip_cidr: str, hw: dict):
+def phase3_netbox(cfg: dict, fqdn: str, ip_cidr: str, hw: dict, proxmox_node: str):
     from lib.netbox import NetBoxClient
 
     nb_cfg = cfg["netbox"]
     console.print(f"  [bold]NetBox:[/bold] registering VM {fqdn} with IP {ip_cidr}…")
     try:
         nb = NetBoxClient(nb_cfg["url"], nb_cfg["token"])
-        cluster_id = nb.get_cluster_id(nb_cfg.get("cluster_name", "proxmox"))
+        device_id = nb.get_device_id(proxmox_node)
         vm = nb.create_virtual_machine(
             name=fqdn,
-            cluster_id=cluster_id,
+            device_id=device_id,
             vcpus=hw["cpu"],
             memory_mb=hw["ram_mb"],
             disk_gb=hw["disk_gb"],
@@ -498,7 +509,7 @@ def main():
     console.print(Panel("[bold cyan]Phase 3 — Registering services[/bold cyan]", expand=False))
     phase3_adguard(cfg, meta["fqdn"], ip_info["ip_only"])
     phase3_npmplus(cfg, meta["fqdn"], ip_info["ip_only"], npm_info)
-    phase3_netbox(cfg, meta["fqdn"], ip_info["ip_cidr"], hw)
+    phase3_netbox(cfg, meta["fqdn"], ip_info["ip_cidr"], hw, meta["proxmox_node"])
 
     # ── Phase 4 ──
     console.print()

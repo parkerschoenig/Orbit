@@ -6,7 +6,6 @@ proxmox:
 netbox:
   url: https://netbox.lab.home
   token: your-netbox-api-token-here
-  cluster_name: proxmox             # Name of the virtualization cluster in NetBox
 
 adguard:
   url: http://adguard.lab.home:3000

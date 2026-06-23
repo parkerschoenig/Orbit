@@ -36,20 +36,20 @@ class NetBoxClient:
 
     # ── VM / Interface / IP creation ─────────────────────────────────────────
 
-    def get_cluster_id(self, cluster_name: str) -> int:
-        resp = self._client.get(f"{self._base}/virtualization/clusters/", params={"name": cluster_name})
+    def get_device_id(self, device_name: str) -> int:
+        resp = self._client.get(f"{self._base}/dcim/devices/", params={"name": device_name})
         resp.raise_for_status()
         results = resp.json()["results"]
         if not results:
-            raise ValueError(f"NetBox cluster '{cluster_name}' not found")
+            raise ValueError(f"NetBox device '{device_name}' not found")
         return results[0]["id"]
 
-    def create_virtual_machine(self, name: str, cluster_id: int, vcpus: int, memory_mb: int, disk_gb: int) -> dict:
+    def create_virtual_machine(self, name: str, device_id: int, vcpus: int, memory_mb: int, disk_gb: int) -> dict:
         resp = self._client.post(
             f"{self._base}/virtualization/virtual-machines/",
             json={
                 "name": name,
-                "cluster": cluster_id,
+                "device": device_id,
                 "vcpus": vcpus,
                 "memory": memory_mb,
                 "disk": disk_gb,
