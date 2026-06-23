@@ -252,13 +252,24 @@ def phase1_hardware(cfg: dict, proxmox_node: str) -> dict:
     all_storage: list[dict] = []
     nfs_storage: list[dict] = []
     try:
-        console.print("  Querying Proxmox storage…")
+        console.print(f"  Querying storage on [bold]{proxmox_node}[/bold]…")
         ssh = ProxmoxSSH(proxmox_node, prox_cfg["ssh_user"], prox_cfg["ssh_key"])
         all_storage = ssh.list_storage()
         ssh.close()
-        nfs_storage = [s for s in all_storage if s.get("type") in ("nfs", "cifs")]
+        if not all_storage:
+            console.print("  [yellow]Warning: storage query returned no results — falling back to manual entry.[/yellow]")
+            console.print(f"  [dim]Test with: ssh {prox_cfg['ssh_user']}@{proxmox_node} pvesh get /storage --output-format json[/dim]")
+        else:
+            console.print(f"  Found {len(all_storage)} storage pool(s): {', '.join(s['storage'] for s in all_storage)}")
+            nfs_storage = [s for s in all_storage if s.get("type") in ("nfs", "cifs")]
+            if nfs_storage:
+                console.print(f"  NFS/CIFS pools: {', '.join(s['storage'] for s in nfs_storage)}")
+            else:
+                console.print("  [yellow]No NFS/CIFS storage pools found on this node.[/yellow]")
     except Exception as e:
-        console.print(f"  [yellow]Could not query Proxmox storage ({e}) — will use manual entry.[/yellow]")
+        console.print(f"  [red]Could not connect to Proxmox to query storage:[/red] {e}")
+        console.print(f"  [dim]Make sure your SSH key is authorized on {proxmox_node} and the key path in config.yaml is correct.[/dim]")
+        console.print("  Falling back to manual entry.")
 
     # ── OS disk storage ──────────────────────────────────────────────────────
     disk_storage_pools = [
