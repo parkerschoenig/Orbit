@@ -5,7 +5,7 @@ class AdGuardClient:
     def __init__(self, url: str, username: str, password: str):
         self._base = url.rstrip("/")
         self._auth = (username, password)
-        self._client = httpx.Client(timeout=10)
+        self._client = httpx.Client(timeout=10, verify=False, follow_redirects=True)
 
     def close(self):
         self._client.close()

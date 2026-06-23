@@ -4,7 +4,7 @@ import httpx
 class NPMPlusClient:
     def __init__(self, url: str, email: str, password: str):
         self._base = url.rstrip("/")
-        self._client = httpx.Client(timeout=12)
+        self._client = httpx.Client(timeout=12, verify=False, follow_redirects=True)
         self._token = self._login(email, password)
 
     def _login(self, email: str, password: str) -> str:

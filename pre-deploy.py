@@ -191,8 +191,30 @@ def gather_ip(cfg: dict) -> dict:
     return {"ip_cidr": ip_cidr, "ip_only": ip_only, "gateway": gateway, "prefix_id": chosen_prefix["id"]}
 
 
+def gather_hardware(cfg: dict) -> dict:
+    console.print(Panel("[bold cyan]Step 3 — Hardware specs[/bold cyan]", expand=False))
+    defaults = cfg.get("defaults", {})
+
+    cpu = questionary.text(
+        "CPU cores:",
+        default=str(defaults.get("cpu_cores", 2)),
+    ).ask()
+
+    ram = questionary.text(
+        "RAM (MB):",
+        default=str(defaults.get("ram_mb", 2048)),
+    ).ask()
+
+    disk = questionary.text(
+        "Disk (GB):",
+        default=str(defaults.get("disk_gb", 10)),
+    ).ask()
+
+    return {"cpu": int(cpu), "ram_mb": int(ram), "disk_gb": int(disk)}
+
+
 def gather_npmplus(cfg: dict, fqdn: str) -> dict:
-    console.print(Panel("[bold cyan]Step 3 — NPMplus reverse proxy[/bold cyan]", expand=False))
+    console.print(Panel("[bold cyan]Step 4 — NPMplus reverse proxy[/bold cyan]", expand=False))
 
     skip = questionary.confirm("Skip NPMplus proxy setup?", default=False).ask()
     if skip:
@@ -215,7 +237,7 @@ def gather_npmplus(cfg: dict, fqdn: str) -> dict:
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 
-def show_summary(meta: dict, ip_info: dict, npm_info: dict):
+def show_summary(meta: dict, ip_info: dict, hw: dict, npm_info: dict):
     table = Table(title="Pre-Deployment Summary", show_header=False, box=None, padding=(0, 2))
     table.add_column("Key", style="bold")
     table.add_column("Value")
@@ -224,6 +246,9 @@ def show_summary(meta: dict, ip_info: dict, npm_info: dict):
     table.add_row("FQDN", meta["fqdn"])
     table.add_row("IP", ip_info["ip_cidr"])
     table.add_row("Gateway", ip_info["gateway"])
+    table.add_row("CPU", f"{hw['cpu']} cores")
+    table.add_row("RAM", f"{hw['ram_mb']} MB")
+    table.add_row("Disk", f"{hw['disk_gb']} GB")
     if not npm_info.get("skip"):
         table.add_row("NPMplus proxy", f"→ {ip_info['ip_only']}:{npm_info['forward_port']}")
 
@@ -271,7 +296,7 @@ def register_npmplus(cfg: dict, fqdn: str, ip_only: str, npm_info: dict):
         console.print(f"    [red]NPMplus error:[/red] {e}")
 
 
-def register_netbox(cfg: dict, meta: dict, ip_info: dict):
+def register_netbox(cfg: dict, meta: dict, ip_info: dict, hw: dict):
     from lib.netbox import NetBoxClient
     nb_cfg = cfg["netbox"]
     console.print(f"  [bold]NetBox:[/bold] creating VM {meta['fqdn']} on {meta['proxmox_node']}…")
@@ -281,9 +306,9 @@ def register_netbox(cfg: dict, meta: dict, ip_info: dict):
         vm = nb.create_virtual_machine(
             name=meta["fqdn"],
             device_id=device_id,
-            vcpus=2,
-            memory_mb=2048,
-            disk_gb=10,
+            vcpus=hw["cpu"],
+            memory_mb=hw["ram_mb"],
+            disk_gb=hw["disk_gb"],
         )
         iface = nb.create_interface(vm["id"])
         ip_obj = nb.create_ip_address(ip_info["ip_cidr"], dns_name=meta["fqdn"], interface_id=iface["id"])
@@ -310,10 +335,11 @@ def main():
 
     meta = gather_info(cfg)
     ip_info = gather_ip(cfg)
+    hw = gather_hardware(cfg)
     npm_info = gather_npmplus(cfg, meta["fqdn"])
 
     console.print()
-    show_summary(meta, ip_info, npm_info)
+    show_summary(meta, ip_info, hw, npm_info)
 
     if args.dry_run:
         console.print(Panel(
@@ -321,7 +347,7 @@ def main():
             "Would have created:\n"
             f"  AdGuard DNS rewrite: [cyan]{meta['fqdn']}[/cyan] → [cyan]{cfg['adguard'].get('dns_target', ip_info['ip_only'])}[/cyan]\n"
             + (f"  NPMplus proxy host: [cyan]{meta['fqdn']}[/cyan] → [cyan]{ip_info['ip_only']}:{npm_info['forward_port']}[/cyan]\n" if not npm_info.get("skip") else "  NPMplus: skipped\n")
-            + f"  NetBox VM [cyan]{meta['fqdn']}[/cyan] with IP [cyan]{ip_info['ip_cidr']}[/cyan]",
+            + f"  NetBox VM [cyan]{meta['fqdn']}[/cyan] with IP [cyan]{ip_info['ip_cidr']}[/cyan] ({hw['cpu']} vCPU, {hw['ram_mb']}MB RAM, {hw['disk_gb']}GB disk)",
             expand=False,
         ))
         sys.exit(0)
@@ -334,7 +360,7 @@ def main():
     console.print(Panel("[bold cyan]Registering services[/bold cyan]", expand=False))
     register_adguard(cfg, meta["fqdn"], ip_info["ip_only"])
     register_npmplus(cfg, meta["fqdn"], ip_info["ip_only"], npm_info)
-    register_netbox(cfg, meta, ip_info)
+    register_netbox(cfg, meta, ip_info, hw)
 
     console.print()
     console.print(Panel(
