@@ -185,12 +185,22 @@ def phase1_ip(cfg: dict) -> dict:
         console.print("[yellow]No available IPs found automatically.[/yellow]")
         use_suggested = False
 
+    def validate_ip(val: str) -> bool | str:
+        last_octet = val.strip().split(".")[-1]
+        try:
+            if int(last_octet) in (0, 1, 255):
+                return "Cannot use .0, .1, or .255 — reserved for network/gateway/broadcast"
+        except ValueError:
+            return "Enter a valid IP address"
+        return True
+
     if use_suggested:
         ip_cidr = suggested_cidr
     else:
         prefix_len = prefix_bits(chosen_prefix["prefix"])
         custom_ip = questionary.text(
             f"Enter IP address (will use /{prefix_len}):",
+            validate=validate_ip,
         ).ask()
         if custom_ip is None:
             sys.exit(0)

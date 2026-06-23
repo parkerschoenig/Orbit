@@ -23,16 +23,18 @@ class NetBoxClient:
         return resp.json()["results"]
 
     def next_available_ip(self, prefix_id: int) -> Optional[str]:
-        """Return the next free IP (CIDR notation) in a prefix, or None."""
+        """Return the next free IP (CIDR notation) in a prefix, skipping reserved addresses (.0, .1, .255)."""
         resp = self._client.get(
             f"{self._base}/ipam/prefixes/{prefix_id}/available-ips/",
-            params={"limit": 1},
+            params={"limit": 20},
         )
         resp.raise_for_status()
         results = resp.json()
-        if not results:
-            return None
-        return results[0]["address"]  # e.g. "192.168.20.10/24"
+        for entry in results:
+            last_octet = int(entry["address"].split("/")[0].split(".")[-1])
+            if last_octet not in (0, 1, 255):
+                return entry["address"]
+        return None
 
     # ── VM / Interface / IP creation ─────────────────────────────────────────
 
