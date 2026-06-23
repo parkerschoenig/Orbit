@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Post-deployment: deploy SSH keys and harden sshd on a newly created LXC.
+Post-deployment: deploy SSH keys and harden sshd on a newly created VM/LXC.
 Usage: python3 post-deploy.py [IP]
 """
 
@@ -43,11 +43,11 @@ def validate_ip(val: str) -> bool | str:
 
 def main():
     parser = argparse.ArgumentParser(description="Post-deployment: SSH key deployment and hardening")
-    parser.add_argument("ip", nargs="?", help="IP address of the new LXC")
+    parser.add_argument("ip", nargs="?", help="IP address of the new VM/LXC")
     args = parser.parse_args()
 
     console.print(Panel(
-        "[bold green]LXC Post-Deployment[/bold green]\n[dim]SSH key deployment · sshd hardening[/dim]",
+        "[bold green]VM/LXC Post-Deployment[/bold green]\n[dim]SSH key deployment · sshd hardening[/dim]",
         expand=False,
     ))
 
@@ -60,15 +60,15 @@ def main():
         if valid is not True:
             console.print(f"[red]{valid}[/red]")
             sys.exit(1)
-        console.print(f"  Target LXC: [cyan]{ip}[/cyan]")
+        console.print(f"  Target VM/LXC: [cyan]{ip}[/cyan]")
     else:
-        ip = questionary.text("IP address of the new LXC:", validate=validate_ip).ask()
+        ip = questionary.text("IP address of the new VM/LXC:", validate=validate_ip).ask()
         if ip is None:
             sys.exit(0)
         ip = ip.strip()
 
     # Root password (needed for initial Ansible connection before key auth is set up)
-    root_pass = questionary.password("Root password of the LXC (for initial connection):").ask()
+    root_pass = questionary.password("Root password of the VM/LXC (for initial connection):").ask()
     if root_pass is None:
         sys.exit(0)
 

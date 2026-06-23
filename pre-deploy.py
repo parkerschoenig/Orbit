@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Pre-deployment: reserve an IP, register DNS/proxy/NetBox, then print the
-settings to use when manually creating the LXC in Proxmox.
+settings to use when manually creating the VM/LXC in Proxmox.
 """
 
 import argparse
@@ -78,21 +78,25 @@ def gather_info(cfg: dict) -> dict:
 
     default_suffix = cfg.get("defaults", {}).get("domain_suffix", "")
 
-    proxmox_hosts = cfg.get("proxmox", {}).get("hosts", [])
-    if proxmox_hosts:
-        if len(proxmox_hosts) == 1:
-            proxmox_node = proxmox_hosts[0]
-            console.print(f"  Proxmox node: [cyan]{proxmox_node}[/cyan]")
-        else:
-            proxmox_node = questionary.select(
-                "Proxmox node (parent host for this LXC):",
-                choices=proxmox_hosts,
-            ).ask()
-            if proxmox_node is None:
-                sys.exit(0)
+    proxmox_cfg = cfg.get("proxmox", {})
+    # Support both `hosts` (list) and legacy `host` (single string)
+    proxmox_hosts = proxmox_cfg.get("hosts") or []
+    if not proxmox_hosts and proxmox_cfg.get("host"):
+        proxmox_hosts = [proxmox_cfg["host"]]
+
+    if len(proxmox_hosts) == 1:
+        proxmox_node = proxmox_hosts[0]
+        console.print(f"  Proxmox node: [cyan]{proxmox_node}[/cyan]")
+    elif len(proxmox_hosts) > 1:
+        proxmox_node = questionary.select(
+            "Proxmox node (parent host for this VM/LXC):",
+            choices=proxmox_hosts,
+        ).ask()
+        if proxmox_node is None:
+            sys.exit(0)
     else:
         proxmox_node = questionary.text(
-            "Proxmox node FQDN (parent host for this LXC):",
+            "Proxmox node FQDN (parent host for this VM/LXC):",
             validate=validate_fqdn,
         ).ask()
         if proxmox_node is None:
@@ -100,7 +104,7 @@ def gather_info(cfg: dict) -> dict:
 
     fqdn_hint = f"  (e.g. myapp.{default_suffix})" if default_suffix else ""
     fqdn = questionary.text(
-        f"FQDN for the new LXC{fqdn_hint}:",
+        f"FQDN for the new VM/LXC{fqdn_hint}:",
         validate=validate_fqdn,
     ).ask()
     if fqdn is None:
@@ -232,7 +236,7 @@ def gather_npmplus(cfg: dict, fqdn: str) -> dict:
     if skip:
         return {"skip": True}
 
-    forward_port = questionary.text("Service port on the LXC:", validate=validate_port).ask()
+    forward_port = questionary.text("Service port on the VM/LXC:", validate=validate_port).ask()
     if forward_port is None:
         sys.exit(0)
 
@@ -348,7 +352,7 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Show plan without making changes")
     args = parser.parse_args()
 
-    title = "[bold green]LXC Pre-Deployment[/bold green]\n[dim]NetBox · AdGuard · NPMplus[/dim]"
+    title = "[bold green]VM/LXC Pre-Deployment[/bold green]\n[dim]NetBox · AdGuard · NPMplus[/dim]"
     if args.dry_run:
         title += "\n[yellow bold]DRY RUN — no changes will be made[/yellow bold]"
     console.print(Panel(title, expand=False))
@@ -390,12 +394,12 @@ def main():
     dns_server_ip = ag_cfg.get("dns_server", ag_cfg.get("dns_target", ip_info["ip_only"]))
     console.print()
     console.print(Panel(
-        f"[bold green]Done! Now create your LXC manually with these settings:[/bold green]\n\n"
+        f"[bold green]Done! Now create your VM/LXC manually with these settings:[/bold green]\n\n"
         f"  Hostname:  [cyan]{meta['hostname']}[/cyan]\n"
         f"  IP:        [cyan]{ip_info['ip_cidr']}[/cyan]\n"
         f"  Gateway:   [cyan]{ip_info['gateway']}[/cyan]\n"
         f"  DNS:       [cyan]{dns_server_ip}[/cyan]\n\n"
-        f"When the LXC is up, run:  [dim]python3 post-deploy.py {ip_info['ip_only']}[/dim]",
+        f"When the VM/LXC is up, run:  [dim]python3 post-deploy.py {ip_info['ip_only']}[/dim]",
         expand=False,
     ))
 
