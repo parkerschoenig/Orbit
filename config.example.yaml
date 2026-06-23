@@ -2,8 +2,19 @@ proxmox:
   host: node-a-prox.lab.home        # Proxmox node hostname or IP
   ssh_user: root
   ssh_key: /home/parker/.ssh/id_ed25519
-  api_token_id: root@pam!deploy         # Proxmox API token (Datacenter → API Tokens)
-  api_token_secret: your-token-secret-here
+
+  # Storage pools available for LXC OS disks (Datacenter → Storage, check "Content" includes CT)
+  storage_pools:
+    - local-lvm
+    - local
+
+  # NFS/CIFS shares to offer as bind mounts inside new LXCs
+  # path = where the share is mounted on the Proxmox host (/mnt/pve/<storage-name>)
+  nfs_shares:
+    - storage: truenas-media
+      path: /mnt/pve/truenas-media
+    - storage: truenas-backup
+      path: /mnt/pve/truenas-backup
 
 netbox:
   url: https://netbox.lab.home

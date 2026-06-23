@@ -242,49 +242,19 @@ def phase1_ip(cfg: dict) -> dict:
 
 
 def phase1_hardware(cfg: dict, proxmox_node: str) -> dict:
-    from lib.proxmox_ssh import ProxmoxSSH
-
     console.print(Panel("[bold cyan]Hardware & LXC configuration[/bold cyan]", expand=False))
     defaults = cfg.get("defaults", {})
     prox_cfg = cfg["proxmox"]
 
-    # ── Query Proxmox storage via SSH login shell ────────────────────────────
-    all_storage: list[dict] = []
-    nfs_storage: list[dict] = []
-    try:
-        console.print(f"  Querying storage on [bold]{proxmox_node}[/bold]…")
-        ssh = ProxmoxSSH(proxmox_node, prox_cfg["ssh_user"], prox_cfg["ssh_key"])
-        all_storage = ssh.list_storage()
-        ssh.close()
-        if not all_storage:
-            console.print("  [yellow]Storage query returned no results — falling back to manual entry.[/yellow]")
-        else:
-            console.print(f"  Found {len(all_storage)} storage pool(s): {', '.join(s['storage'] for s in all_storage)}")
-            nfs_storage = [s for s in all_storage if s.get("type") in ("nfs", "cifs")]
-            if nfs_storage:
-                console.print(f"  NFS/CIFS pools: {', '.join(s['storage'] for s in nfs_storage)}")
-            else:
-                console.print("  [yellow]No NFS/CIFS storage pools found on this node.[/yellow]")
-    except Exception as e:
-        console.print(f"  [red]Could not connect to Proxmox:[/red] {e}")
-        console.print("  Falling back to manual entry.")
-
-    # ── OS disk storage ──────────────────────────────────────────────────────
-    disk_storage_pools = [
-        s for s in all_storage
-        if any(c in s.get("content", "") for c in ("rootdir", "images"))
-    ]
-
-    if disk_storage_pools:
-        storage_choices = [
-            f"{s['storage']}  [{s['type']}]" for s in disk_storage_pools
-        ]
+    # ── OS disk storage (from config) ────────────────────────────────────────
+    storage_pools: list[str] = prox_cfg.get("storage_pools", [])
+    if storage_pools:
         selected_storage = questionary.select(
-            "OS disk storage:", choices=storage_choices
+            "OS disk storage:", choices=storage_pools
         ).ask()
         if selected_storage is None:
             sys.exit(0)
-        storage = selected_storage.split()[0]
+        storage = selected_storage
     else:
         storage = questionary.text(
             "OS disk storage (e.g. local-lvm):",
@@ -319,12 +289,13 @@ def phase1_hardware(cfg: dict, proxmox_node: str) -> dict:
         "Enable root SSH login? (will still require key auth)", default=True
     ).ask()
 
-    # ── NFS / CIFS bind mounts ────────────────────────────────────────────────
+    # ── NFS / CIFS bind mounts (from config) ─────────────────────────────────
+    nfs_shares: list[dict] = prox_cfg.get("nfs_shares", [])
     mounts = []
-    if nfs_storage:
+    if nfs_shares:
         nfs_choices = [
-            f"{s['storage']}  ({s.get('server', '')}:{s.get('export', s.get('path', ''))})"
-            for s in nfs_storage
+            f"{s['storage']}  ({s.get('path', '/mnt/pve/' + s['storage'])})"
+            for s in nfs_shares
         ]
         while True:
             add_mount = questionary.confirm(
@@ -333,12 +304,12 @@ def phase1_hardware(cfg: dict, proxmox_node: str) -> dict:
             if not add_mount:
                 break
             selected_nfs = questionary.select(
-                "Select NFS/CIFS storage to mount:", choices=nfs_choices
+                "Select NFS/CIFS share to mount:", choices=nfs_choices
             ).ask()
             if selected_nfs is None:
                 break
             nfs_name = selected_nfs.split()[0]
-            nfs_entry = next(s for s in nfs_storage if s["storage"] == nfs_name)
+            nfs_entry = next(s for s in nfs_shares if s["storage"] == nfs_name)
             mount_dest = questionary.text(
                 f"Mount destination inside LXC for '{nfs_name}':",
                 default=f"/mnt/{nfs_name}",
