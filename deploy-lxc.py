@@ -6,6 +6,7 @@ Automates: IP selection (NetBox) → LXC creation (Proxmox helper script) →
            → SSH hardening (Ansible)
 """
 
+import argparse
 import ipaddress
 import os
 import re
@@ -476,11 +477,17 @@ def phase4_harden_ssh(cfg: dict, ip_only: str, hw: dict):
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
-    console.print(Panel(
-        "[bold green]LXC Deployment Automation[/bold green]\n"
-        "[dim]Proxmox · NetBox · AdGuard · NPMplus[/dim]",
-        expand=False,
-    ))
+    parser = argparse.ArgumentParser(description="LXC Deployment Automation")
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Collect all inputs and show the deployment plan without making any changes",
+    )
+    args = parser.parse_args()
+
+    title = "[bold green]LXC Deployment Automation[/bold green]\n[dim]Proxmox · NetBox · AdGuard · NPMplus[/dim]"
+    if args.dry_run:
+        title += "\n[yellow bold]DRY RUN — no changes will be made[/yellow bold]"
+    console.print(Panel(title, expand=False))
 
     cfg = load_config()
 
@@ -492,6 +499,19 @@ def main():
 
     console.print()
     show_summary(meta, ip_info, hw, npm_info)
+
+    if args.dry_run:
+        console.print(Panel(
+            "[yellow]Dry run complete — no LXC was created and no services were modified.[/yellow]\n\n"
+            "Actions that would have run:\n"
+            f"  1. SSH to [cyan]{meta['proxmox_node']}[/cyan] and run helper script\n"
+            f"  2. AdGuard DNS rewrite: [cyan]{meta['fqdn']}[/cyan] → [cyan]{ip_info['ip_only']}[/cyan]\n"
+            + (f"  3. NPMplus proxy host: [cyan]{meta['fqdn']}[/cyan] → [cyan]{ip_info['ip_only']}:{npm_info['forward_port']}[/cyan]\n" if not npm_info.get("skip") else "  3. NPMplus: skipped\n")
+            + f"  4. NetBox VM [cyan]{meta['fqdn']}[/cyan] on [cyan]{meta['proxmox_node']}[/cyan] with IP [cyan]{ip_info['ip_cidr']}[/cyan]\n"
+            f"  5. SSH hardening + key deployment to [cyan]{ip_info['ip_only']}[/cyan]",
+            expand=False,
+        ))
+        sys.exit(0)
 
     proceed = questionary.confirm("\nProceed with deployment?", default=True).ask()
     if not proceed:
