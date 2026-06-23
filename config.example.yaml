@@ -21,8 +21,7 @@ npmplus:
   ssl_certificate: "*.lab.home"  # Certificate to auto-attach to new proxy hosts (leave blank to skip)
 
 ssh_keys:
-  - /home/user/.ssh/id_ed25519.pub              # personal key
-  - /home/user/.homelab-updates/id_ed25519.pub  # ansible server key
+  - /home/user/.ssh/id_ed25519.pub  # add as many keys as needed
 
 defaults:
   domain_suffix: lab.home
