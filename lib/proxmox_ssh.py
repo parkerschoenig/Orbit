@@ -76,27 +76,52 @@ class ProxmoxSSH:
         return exit_code, stdout.read().decode(), stderr.read().decode()
 
     def list_storage(self) -> list[dict]:
-        """Return all storage pools configured on this Proxmox host."""
-        code, out, _ = self.run("pvesh get /storage --output-format json 2>/dev/null")
+        """Parse /etc/pve/storage.cfg and return storage pool list.
+
+        Uses direct file read instead of pvesh, which requires a full cluster
+        environment that isn't available in non-interactive SSH sessions.
+        """
+        code, out, _ = self.run("cat /etc/pve/storage.cfg 2>/dev/null")
         if code != 0 or not out.strip():
             return []
-        try:
-            return json.loads(out)
-        except json.JSONDecodeError:
-            return []
+
+        storages: list[dict] = []
+        current: dict = {}
+        for line in out.splitlines():
+            stripped = line.rstrip()
+            if not stripped:
+                if current:
+                    storages.append(current)
+                    current = {}
+                continue
+            if stripped[0] not in (" ", "\t"):
+                # Header line: "type: storagename"
+                if current:
+                    storages.append(current)
+                parts = stripped.split(":", 1)
+                current = {"type": parts[0].strip(), "storage": parts[1].strip()}
+            else:
+                # Property line: "\tkey value"
+                parts = stripped.strip().split(None, 1)
+                if len(parts) == 2:
+                    current[parts[0]] = parts[1]
+        if current:
+            storages.append(current)
+
+        return storages
 
     def find_container_id(self, node: str, hostname: str) -> int | None:
-        """Find a container's VMID by its hostname on a given node."""
-        code, out, _ = self.run(f"pvesh get /nodes/{node}/lxc --output-format json 2>/dev/null")
+        """Find a container's VMID by searching /etc/pve/lxc/*.conf for the hostname."""
+        code, out, _ = self.run(
+            f"grep -rl '^hostname: {hostname}$' /etc/pve/lxc/ 2>/dev/null"
+        )
         if code != 0 or not out.strip():
             return None
         try:
-            for ct in json.loads(out):
-                if ct.get("name") == hostname:
-                    return int(ct["vmid"])
-        except (json.JSONDecodeError, KeyError, ValueError):
-            pass
-        return None
+            conf_path = out.strip().splitlines()[0]
+            return int(conf_path.split("/")[-1].replace(".conf", ""))
+        except (ValueError, IndexError):
+            return None
 
     def set_container_mounts(self, vmid: int, mounts: list[dict]) -> list[str]:
         """

@@ -258,7 +258,7 @@ def phase1_hardware(cfg: dict, proxmox_node: str) -> dict:
         ssh.close()
         if not all_storage:
             console.print("  [yellow]Warning: storage query returned no results — falling back to manual entry.[/yellow]")
-            console.print(f"  [dim]Test with: ssh {prox_cfg['ssh_user']}@{proxmox_node} pvesh get /storage --output-format json[/dim]")
+            console.print(f"  [dim]Test with: ssh {prox_cfg['ssh_user']}@{proxmox_node} cat /etc/pve/storage.cfg[/dim]")
         else:
             console.print(f"  Found {len(all_storage)} storage pool(s): {', '.join(s['storage'] for s in all_storage)}")
             nfs_storage = [s for s in all_storage if s.get("type") in ("nfs", "cifs")]
