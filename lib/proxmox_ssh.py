@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import select
@@ -73,3 +74,40 @@ class ProxmoxSSH:
         _, stdout, stderr = self._client.exec_command(command)
         exit_code = stdout.channel.recv_exit_status()
         return exit_code, stdout.read().decode(), stderr.read().decode()
+
+    def list_storage(self) -> list[dict]:
+        """Return all storage pools configured on this Proxmox host."""
+        code, out, _ = self.run("pvesh get /storage --output-format json 2>/dev/null")
+        if code != 0 or not out.strip():
+            return []
+        try:
+            return json.loads(out)
+        except json.JSONDecodeError:
+            return []
+
+    def find_container_id(self, node: str, hostname: str) -> int | None:
+        """Find a container's VMID by its hostname on a given node."""
+        code, out, _ = self.run(f"pvesh get /nodes/{node}/lxc --output-format json 2>/dev/null")
+        if code != 0 or not out.strip():
+            return None
+        try:
+            for ct in json.loads(out):
+                if ct.get("name") == hostname:
+                    return int(ct["vmid"])
+        except (json.JSONDecodeError, KeyError, ValueError):
+            pass
+        return None
+
+    def set_container_mounts(self, vmid: int, mounts: list[dict]) -> list[str]:
+        """
+        Add bind mounts to a container via pct set.
+        Each mount dict: {"path": "/mnt/pve/storage-name", "dest": "/mnt/data"}
+        Returns list of any error messages.
+        """
+        errors = []
+        for i, mount in enumerate(mounts):
+            cmd = f"pct set {vmid} -mp{i} {mount['path']},mp={mount['dest']}"
+            code, _, err = self.run(cmd)
+            if code != 0:
+                errors.append(f"mp{i}: {err.strip()}")
+        return errors

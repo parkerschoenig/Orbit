@@ -11,6 +11,7 @@ adguard:
   url: http://adguard.lab.home:3000
   username: admin
   password: your-adguard-password-here
+  dns_target: 192.168.1.100    # All DNS rewrites point here (e.g. your reverse proxy / NPMplus IP)
 
 npmplus:
   url: http://npmplus.lab.home:81

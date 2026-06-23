@@ -174,13 +174,25 @@ def phase1_ip(cfg: dict) -> dict:
         console.print(f"[red]NetBox error:[/red] {e}")
         sys.exit(1)
 
+    def ping_ip(ip: str) -> bool:
+        """Return True if the IP responds to ping (already in use)."""
+        result = subprocess.run(
+            ["ping", "-c", "1", "-W", "1", ip],
+            capture_output=True,
+        )
+        return result.returncode == 0
+
     if suggested_cidr:
-        console.print(f"  Suggested: [green]{suggested_cidr}[/green]")
-        use_suggested = questionary.confirm(
-            f"Use {suggested_cidr}?", default=True
-        ).ask()
-        if use_suggested is None:
-            sys.exit(0)
+        suggested_ip = ip_from_cidr(suggested_cidr)
+        console.print(f"  Suggested: [green]{suggested_cidr}[/green]  — pinging to check for duplicates…")
+        if ping_ip(suggested_ip):
+            console.print(f"  [yellow]Warning: {suggested_ip} responded to ping — it may already be in use![/yellow]")
+            use_suggested = False
+        else:
+            console.print(f"  [dim]{suggested_ip} did not respond — looks free.[/dim]")
+            use_suggested = questionary.confirm(f"Use {suggested_cidr}?", default=True).ask()
+            if use_suggested is None:
+                sys.exit(0)
     else:
         console.print("[yellow]No available IPs found automatically.[/yellow]")
         use_suggested = False
@@ -198,13 +210,21 @@ def phase1_ip(cfg: dict) -> dict:
         ip_cidr = suggested_cidr
     else:
         prefix_len = prefix_bits(chosen_prefix["prefix"])
-        custom_ip = questionary.text(
-            f"Enter IP address (will use /{prefix_len}):",
-            validate=validate_ip,
-        ).ask()
-        if custom_ip is None:
-            sys.exit(0)
-        ip_cidr = f"{custom_ip.strip()}/{prefix_len}"
+        while True:
+            custom_ip = questionary.text(
+                f"Enter IP address (will use /{prefix_len}):",
+                validate=validate_ip,
+            ).ask()
+            if custom_ip is None:
+                sys.exit(0)
+            custom_ip = custom_ip.strip()
+            console.print(f"  Pinging {custom_ip}…")
+            if ping_ip(custom_ip):
+                console.print(f"  [yellow]{custom_ip} responded to ping — try a different address.[/yellow]")
+            else:
+                console.print(f"  [dim]{custom_ip} did not respond — looks free.[/dim]")
+                break
+        ip_cidr = f"{custom_ip}/{prefix_len}"
 
     nb.close()
 
@@ -221,11 +241,51 @@ def phase1_ip(cfg: dict) -> dict:
     }
 
 
-def phase1_hardware(cfg: dict) -> dict:
+def phase1_hardware(cfg: dict, proxmox_node: str) -> dict:
+    from lib.proxmox_ssh import ProxmoxSSH
+
     console.print(Panel("[bold cyan]Hardware & LXC configuration[/bold cyan]", expand=False))
-
     defaults = cfg.get("defaults", {})
+    prox_cfg = cfg["proxmox"]
 
+    # ── Query Proxmox storage ────────────────────────────────────────────────
+    all_storage: list[dict] = []
+    nfs_storage: list[dict] = []
+    try:
+        console.print("  Querying Proxmox storage…")
+        ssh = ProxmoxSSH(proxmox_node, prox_cfg["ssh_user"], prox_cfg["ssh_key"])
+        all_storage = ssh.list_storage()
+        ssh.close()
+        nfs_storage = [s for s in all_storage if s.get("type") in ("nfs", "cifs")]
+    except Exception as e:
+        console.print(f"  [yellow]Could not query Proxmox storage ({e}) — will use manual entry.[/yellow]")
+
+    # ── OS disk storage ──────────────────────────────────────────────────────
+    disk_storage_pools = [
+        s for s in all_storage
+        if any(c in s.get("content", "") for c in ("rootdir", "images"))
+    ]
+
+    if disk_storage_pools:
+        storage_choices = [
+            f"{s['storage']}  [{s['type']}]" for s in disk_storage_pools
+        ]
+        selected_storage = questionary.select(
+            "OS disk storage:", choices=storage_choices
+        ).ask()
+        if selected_storage is None:
+            sys.exit(0)
+        storage = selected_storage.split()[0]
+    else:
+        storage = questionary.text(
+            "OS disk storage (e.g. local-lvm):",
+            default=defaults.get("storage", "local-lvm"),
+        ).ask()
+        if storage is None:
+            sys.exit(0)
+        storage = storage.strip()
+
+    # ── Hardware specs ────────────────────────────────────────────────────────
     cpu = questionary.text(
         "CPU cores:",
         default=str(defaults.get("cpu_cores", 2)),
@@ -250,22 +310,53 @@ def phase1_hardware(cfg: dict) -> dict:
         "Enable root SSH login? (will still require key auth)", default=True
     ).ask()
 
-    # NFS/CIFS mounts
+    # ── NFS / CIFS bind mounts ────────────────────────────────────────────────
     mounts = []
-    while True:
-        add_mount = questionary.confirm(
-            f"Add {'another' if mounts else 'an'} NFS/CIFS mount?", default=False
-        ).ask()
-        if not add_mount:
-            break
-        mount_source = questionary.text("Mount source (e.g. 192.168.10.5:/volume1/data):").ask()
-        mount_dest = questionary.text("Mount destination inside LXC (e.g. /mnt/data):").ask()
-        mounts.append({"source": mount_source, "dest": mount_dest})
+    if nfs_storage:
+        nfs_choices = [
+            f"{s['storage']}  ({s.get('server', '')}:{s.get('export', s.get('path', ''))})"
+            for s in nfs_storage
+        ]
+        while True:
+            add_mount = questionary.confirm(
+                f"Add {'another' if mounts else 'an'} NFS/CIFS bind mount?", default=False
+            ).ask()
+            if not add_mount:
+                break
+            selected_nfs = questionary.select(
+                "Select NFS/CIFS storage to mount:", choices=nfs_choices
+            ).ask()
+            if selected_nfs is None:
+                break
+            nfs_name = selected_nfs.split()[0]
+            nfs_entry = next(s for s in nfs_storage if s["storage"] == nfs_name)
+            mount_dest = questionary.text(
+                f"Mount destination inside LXC for '{nfs_name}':",
+                default=f"/mnt/{nfs_name}",
+            ).ask()
+            if mount_dest is None:
+                break
+            mounts.append({
+                "storage": nfs_name,
+                "path": nfs_entry.get("path", f"/mnt/pve/{nfs_name}"),
+                "dest": mount_dest.strip(),
+            })
+    else:
+        while True:
+            add_mount = questionary.confirm(
+                f"Add {'another' if mounts else 'an'} NFS/CIFS bind mount?", default=False
+            ).ask()
+            if not add_mount:
+                break
+            mount_path = questionary.text("Host path on Proxmox (e.g. /mnt/pve/nfs-data):").ask()
+            mount_dest = questionary.text("Mount destination inside LXC (e.g. /mnt/data):").ask()
+            mounts.append({"storage": "", "path": mount_path, "dest": mount_dest})
 
     return {
         "cpu": int(cpu),
         "ram_mb": int(ram),
         "disk_gb": int(disk),
+        "storage": storage,
         "root_password": root_pass,
         "permit_root": "yes" if enable_root_ssh else "prohibit-password",
         "mounts": mounts,
@@ -315,9 +406,10 @@ def show_summary(meta: dict, ip_info: dict, hw: dict, npm_info: dict):
     table.add_row("CPU cores", str(hw["cpu"]))
     table.add_row("RAM", f"{hw['ram_mb']} MB")
     table.add_row("Disk", f"{hw['disk_gb']} GB")
+    table.add_row("Storage", hw["storage"])
     table.add_row("Root SSH login", hw["permit_root"])
     for i, m in enumerate(hw["mounts"], 1):
-        table.add_row(f"Mount {i}", f"{m['source']} → {m['dest']}")
+        table.add_row(f"Mount {i}", f"{m['path']} → {m['dest']}")
     if not npm_info.get("skip"):
         table.add_row("NPMplus proxy", f"→ {ip_info['ip_only']}:{npm_info['forward_port']}")
 
@@ -338,6 +430,7 @@ def phase2_create_lxc(cfg: dict, meta: dict, ip_info: dict, hw: dict) -> bool:
         "CORE_COUNT": str(hw["cpu"]),
         "RAM_SIZE": str(hw["ram_mb"]),
         "DISK_SIZE": str(hw["disk_gb"]),
+        "STORAGE": hw["storage"],
         "NET": f"name=eth0,ip={ip_info['ip_cidr']},gw={ip_info['gateway']},bridge=vmbr0",
         "SSH_ROOT_PW": hw["root_password"],
     }
@@ -351,13 +444,30 @@ def phase2_create_lxc(cfg: dict, meta: dict, ip_info: dict, hw: dict) -> bool:
 
     console.print(f"  Running helper script: [dim]{meta['helper_url']}[/dim]\n")
     exit_code = ssh.run_helper_script(meta["helper_url"], env_vars)
-    ssh.close()
 
     if exit_code != 0:
+        ssh.close()
         console.print(f"\n[red]Helper script exited with code {exit_code}.[/red]")
         return False
 
     console.print(f"\n[green]LXC created successfully.[/green]")
+
+    # Apply bind mounts if any were configured
+    if hw.get("mounts"):
+        node_short = meta["proxmox_node"].split(".")[0]
+        vmid = ssh.find_container_id(node_short, meta["hostname"])
+        if vmid:
+            console.print(f"  Applying {len(hw['mounts'])} bind mount(s) to VMID {vmid}…")
+            errors = ssh.set_container_mounts(vmid, hw["mounts"])
+            if errors:
+                for err in errors:
+                    console.print(f"  [yellow]Mount warning:[/yellow] {err}")
+            else:
+                console.print(f"  [green]Bind mounts applied.[/green]")
+        else:
+            console.print(f"  [yellow]Could not find container VMID for '{meta['hostname']}' — bind mounts skipped.[/yellow]")
+
+    ssh.close()
     return True
 
 
@@ -366,14 +476,15 @@ def phase2_create_lxc(cfg: dict, meta: dict, ip_info: dict, hw: dict) -> bool:
 def phase3_adguard(cfg: dict, fqdn: str, ip_only: str):
     from lib.adguard import AdGuardClient
 
-    console.print(f"  [bold]AdGuard:[/bold] creating DNS rewrite {fqdn} → {ip_only}…")
     ag_cfg = cfg["adguard"]
+    dns_target = ag_cfg.get("dns_target", ip_only)
+    console.print(f"  [bold]AdGuard:[/bold] creating DNS rewrite {fqdn} → {dns_target}…")
     try:
         ag = AdGuardClient(ag_cfg["url"], ag_cfg["username"], ag_cfg["password"])
         if ag.rewrite_exists(fqdn):
             console.print(f"    [yellow]DNS rewrite for {fqdn} already exists, skipping.[/yellow]")
         else:
-            ag.add_rewrite(fqdn, ip_only)
+            ag.add_rewrite(fqdn, dns_target)
             console.print(f"    [green]Done.[/green]")
         ag.close()
     except Exception as e:
@@ -504,7 +615,7 @@ def main():
     # ── Phase 1 ──
     meta = phase1_gather(cfg)
     ip_info = phase1_ip(cfg)
-    hw = phase1_hardware(cfg)
+    hw = phase1_hardware(cfg, meta["proxmox_node"])
     npm_info = phase1_npmplus(cfg, meta["fqdn"], ip_info["ip_only"])
 
     console.print()
