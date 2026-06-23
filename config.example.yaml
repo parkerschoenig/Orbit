@@ -24,12 +24,14 @@ adguard:
   url: http://adguard.lab.home:3000
   username: admin
   password: your-adguard-password-here
-  dns_target: 192.168.1.100    # All DNS rewrites point here (e.g. your reverse proxy / NPMplus IP)
+  dns_target: 192.168.1.100    # Where DNS rewrites point (e.g. your NPMplus / reverse proxy IP)
+  dns_server: 192.168.1.200     # AdGuard Home server IP — shown to the user as the DNS to set in new LXCs
 
 npmplus:
   url: http://npmplus.lab.home:81
   email: admin@example.com
   password: your-npmplus-password-here
+  ssl_certificate: "*.lab.home"  # Certificate nice_name or domain to auto-attach to new proxy hosts (leave blank to skip)
 
 ssh_keys:
   - /home/parker/.ssh/id_ed25519.pub              # personal PC key

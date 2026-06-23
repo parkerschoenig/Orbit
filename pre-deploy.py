@@ -283,12 +283,22 @@ def register_npmplus(cfg: dict, fqdn: str, ip_only: str, npm_info: dict):
     console.print(f"  [bold]NPMplus:[/bold] creating proxy host for {fqdn}…")
     try:
         npm = NPMPlusClient(npm_cfg["url"], npm_cfg["email"], npm_cfg["password"])
+        cert_id: int | None = None
+        ssl_cert_search = npm_cfg.get("ssl_certificate", "").strip()
+        if ssl_cert_search:
+            console.print(f"    Looking up certificate matching [dim]{ssl_cert_search}[/dim]…")
+            cert_id = npm.find_certificate_id(ssl_cert_search)
+            if cert_id is None:
+                console.print(f"    [yellow]Certificate not found — proxy host will be created without SSL cert.[/yellow]")
+            else:
+                console.print(f"    Found certificate ID [dim]{cert_id}[/dim].")
         npm.create_proxy_host(
             domain_names=[fqdn],
             forward_host=ip_only,
             forward_port=npm_info["forward_port"],
             forward_scheme=npm_info.get("forward_scheme", "http"),
             ssl_forced=npm_info.get("ssl_forced", False),
+            certificate_id=cert_id,
         )
         npm.close()
         console.print(f"    [green]Done.[/green]")
@@ -342,10 +352,12 @@ def main():
     show_summary(meta, ip_info, hw, npm_info)
 
     if args.dry_run:
+        ag_cfg = cfg["adguard"]
+        dns_target = ag_cfg.get("dns_target", ip_info["ip_only"])
         console.print(Panel(
             "[yellow]Dry run — nothing was registered.[/yellow]\n\n"
             "Would have created:\n"
-            f"  AdGuard DNS rewrite: [cyan]{meta['fqdn']}[/cyan] → [cyan]{cfg['adguard'].get('dns_target', ip_info['ip_only'])}[/cyan]\n"
+            f"  AdGuard DNS rewrite: [cyan]{meta['fqdn']}[/cyan] → [cyan]{dns_target}[/cyan]\n"
             + (f"  NPMplus proxy host: [cyan]{meta['fqdn']}[/cyan] → [cyan]{ip_info['ip_only']}:{npm_info['forward_port']}[/cyan]\n" if not npm_info.get("skip") else "  NPMplus: skipped\n")
             + f"  NetBox VM [cyan]{meta['fqdn']}[/cyan] with IP [cyan]{ip_info['ip_cidr']}[/cyan] ({hw['cpu']} vCPU, {hw['ram_mb']}MB RAM, {hw['disk_gb']}GB disk)",
             expand=False,
@@ -362,13 +374,15 @@ def main():
     register_npmplus(cfg, meta["fqdn"], ip_info["ip_only"], npm_info)
     register_netbox(cfg, meta, ip_info, hw)
 
+    ag_cfg = cfg["adguard"]
+    dns_server_ip = ag_cfg.get("dns_server", ag_cfg.get("dns_target", ip_info["ip_only"]))
     console.print()
     console.print(Panel(
         f"[bold green]Done! Now create your LXC manually with these settings:[/bold green]\n\n"
         f"  Hostname:  [cyan]{meta['hostname']}[/cyan]\n"
         f"  IP:        [cyan]{ip_info['ip_cidr']}[/cyan]\n"
         f"  Gateway:   [cyan]{ip_info['gateway']}[/cyan]\n"
-        f"  DNS:       [cyan]{cfg['adguard'].get('dns_target', ip_info['ip_only'])}[/cyan]\n\n"
+        f"  DNS:       [cyan]{dns_server_ip}[/cyan]\n\n"
         f"When the LXC is up, run:  [dim]python3 post-deploy.py {ip_info['ip_only']}[/dim]",
         expand=False,
     ))
