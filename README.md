@@ -1,4 +1,4 @@
-# homelab-automation
+# Orbit
 
 Automation scripts for provisioning new VMs and LXC containers in a Proxmox homelab.
 
@@ -35,8 +35,8 @@ pre-deploy.py  →  [create the VM/LXC manually in Proxmox]  →  post-deploy.py
 ## Setup
 
 ```bash
-git clone https://github.com/parkerschoenig/homelab-automation.git
-cd homelab-automation
+git clone https://github.com/parkerschoenig/Orbit.git
+cd Orbit
 pip install -r requirements.txt
 cp config.example.yaml config.yaml
 # Edit config.yaml with your credentials and hostnames
