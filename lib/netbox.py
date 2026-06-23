@@ -54,7 +54,7 @@ class NetBoxClient:
                 "device": device_id,
                 "vcpus": vcpus,
                 "memory": memory_mb,
-                "disk": disk_gb,
+                "disk": disk_gb * 1024,  # NetBox stores disk in MB
                 "status": "active",
             },
         )

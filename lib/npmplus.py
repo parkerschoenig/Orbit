@@ -13,7 +13,13 @@ class NPMPlusClient:
             json={"identity": email, "secret": password},
         )
         resp.raise_for_status()
-        return resp.json()["token"]
+        data = resp.json()
+        # Standard NPM returns {"token": "..."}; some builds wrap it in {"data": {...}}
+        if "token" in data:
+            return data["token"]
+        if "data" in data and "token" in data["data"]:
+            return data["data"]["token"]
+        raise ValueError(f"Could not find token in NPMplus login response: {data}")
 
     def close(self):
         self._client.close()
