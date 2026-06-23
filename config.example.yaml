@@ -1,20 +1,5 @@
 proxmox:
-  host: node-a-prox.lab.home        # Proxmox node hostname or IP
-  ssh_user: root
-  ssh_key: /home/parker/.ssh/id_ed25519
-
-  # Storage pools available for LXC OS disks (Datacenter → Storage, check "Content" includes CT)
-  storage_pools:
-    - local-lvm
-    - local
-
-  # NFS/CIFS shares to offer as bind mounts inside new LXCs
-  # path = where the share is mounted on the Proxmox host (/mnt/pve/<storage-name>)
-  nfs_shares:
-    - storage: truenas-media
-      path: /mnt/pve/truenas-media
-    - storage: truenas-backup
-      path: /mnt/pve/truenas-backup
+  host: your-proxmox-node.lab.home  # Default node shown in the pre-deploy prompt
 
 netbox:
   url: https://netbox.lab.home
@@ -24,18 +9,18 @@ adguard:
   url: http://adguard.lab.home:3000
   username: admin
   password: your-adguard-password-here
-  dns_target: 192.168.1.100    # Where DNS rewrites point (e.g. your NPMplus / reverse proxy IP)
-  dns_server: 192.168.1.200     # AdGuard Home server IP — shown to the user as the DNS to set in new LXCs
+  dns_target: 192.168.1.100    # Where DNS rewrites point (e.g. your reverse proxy IP)
+  dns_server: 192.168.1.200    # AdGuard Home server IP — shown as the DNS to set in new LXCs
 
 npmplus:
   url: http://npmplus.lab.home:81
   email: admin@example.com
   password: your-npmplus-password-here
-  ssl_certificate: "*.lab.home"  # Certificate nice_name or domain to auto-attach to new proxy hosts (leave blank to skip)
+  ssl_certificate: "*.lab.home"  # Certificate to auto-attach to new proxy hosts (leave blank to skip)
 
 ssh_keys:
-  - /home/parker/.ssh/id_ed25519.pub              # personal PC key
-  - /home/parker/.homelab-updates/id_ed25519.pub  # ansible server key
+  - /home/user/.ssh/id_ed25519.pub              # personal key
+  - /home/user/.homelab-updates/id_ed25519.pub  # ansible server key
 
 defaults:
   domain_suffix: lab.home
