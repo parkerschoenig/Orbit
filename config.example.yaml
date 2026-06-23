@@ -2,6 +2,8 @@ proxmox:
   host: node-a-prox.lab.home        # Proxmox node hostname or IP
   ssh_user: root
   ssh_key: /home/parker/.ssh/id_ed25519
+  api_token_id: root@pam!deploy         # Proxmox API token (Datacenter → API Tokens)
+  api_token_secret: your-token-secret-here
 
 netbox:
   url: https://netbox.lab.home

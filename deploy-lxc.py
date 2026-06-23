@@ -248,17 +248,18 @@ def phase1_hardware(cfg: dict, proxmox_node: str) -> dict:
     defaults = cfg.get("defaults", {})
     prox_cfg = cfg["proxmox"]
 
-    # ── Query Proxmox storage ────────────────────────────────────────────────
+    # ── Query Proxmox storage via REST API ───────────────────────────────────
+    from lib.proxmox_api import ProxmoxAPI
+
     all_storage: list[dict] = []
     nfs_storage: list[dict] = []
     try:
-        console.print(f"  Querying storage on [bold]{proxmox_node}[/bold]…")
-        ssh = ProxmoxSSH(proxmox_node, prox_cfg["ssh_user"], prox_cfg["ssh_key"])
-        all_storage = ssh.list_storage()
-        ssh.close()
+        console.print(f"  Querying storage on [bold]{proxmox_node}[/bold] via API…")
+        pve = ProxmoxAPI(proxmox_node, prox_cfg["api_token_id"], prox_cfg["api_token_secret"])
+        all_storage = pve.list_storage()
+        pve.close()
         if not all_storage:
-            console.print("  [yellow]Warning: storage query returned no results — falling back to manual entry.[/yellow]")
-            console.print(f"  [dim]Test with: ssh {prox_cfg['ssh_user']}@{proxmox_node} cat /etc/pve/storage.cfg[/dim]")
+            console.print("  [yellow]Storage query returned no results — falling back to manual entry.[/yellow]")
         else:
             console.print(f"  Found {len(all_storage)} storage pool(s): {', '.join(s['storage'] for s in all_storage)}")
             nfs_storage = [s for s in all_storage if s.get("type") in ("nfs", "cifs")]
@@ -267,8 +268,8 @@ def phase1_hardware(cfg: dict, proxmox_node: str) -> dict:
             else:
                 console.print("  [yellow]No NFS/CIFS storage pools found on this node.[/yellow]")
     except Exception as e:
-        console.print(f"  [red]Could not connect to Proxmox to query storage:[/red] {e}")
-        console.print(f"  [dim]Make sure your SSH key is authorized on {proxmox_node} and the key path in config.yaml is correct.[/dim]")
+        console.print(f"  [red]Could not query Proxmox API:[/red] {e}")
+        console.print(f"  [dim]Check api_token_id and api_token_secret in config.yaml.[/dim]")
         console.print("  Falling back to manual entry.")
 
     # ── OS disk storage ──────────────────────────────────────────────────────
@@ -465,8 +466,14 @@ def phase2_create_lxc(cfg: dict, meta: dict, ip_info: dict, hw: dict) -> bool:
 
     # Apply bind mounts if any were configured
     if hw.get("mounts"):
+        from lib.proxmox_api import ProxmoxAPI
         node_short = meta["proxmox_node"].split(".")[0]
-        vmid = ssh.find_container_id(node_short, meta["hostname"])
+        try:
+            pve = ProxmoxAPI(meta["proxmox_node"], prox_cfg["api_token_id"], prox_cfg["api_token_secret"])
+            vmid = pve.find_container_id(node_short, meta["hostname"])
+            pve.close()
+        except Exception:
+            vmid = None
         if vmid:
             console.print(f"  Applying {len(hw['mounts'])} bind mount(s) to VMID {vmid}…")
             errors = ssh.set_container_mounts(vmid, hw["mounts"])
