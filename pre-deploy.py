@@ -78,13 +78,25 @@ def gather_info(cfg: dict) -> dict:
 
     default_suffix = cfg.get("defaults", {}).get("domain_suffix", "")
 
-    proxmox_node = questionary.text(
-        "Proxmox node FQDN (parent host for this LXC):",
-        default=cfg.get("proxmox", {}).get("host", ""),
-        validate=validate_fqdn,
-    ).ask()
-    if proxmox_node is None:
-        sys.exit(0)
+    proxmox_hosts = cfg.get("proxmox", {}).get("hosts", [])
+    if proxmox_hosts:
+        if len(proxmox_hosts) == 1:
+            proxmox_node = proxmox_hosts[0]
+            console.print(f"  Proxmox node: [cyan]{proxmox_node}[/cyan]")
+        else:
+            proxmox_node = questionary.select(
+                "Proxmox node (parent host for this LXC):",
+                choices=proxmox_hosts,
+            ).ask()
+            if proxmox_node is None:
+                sys.exit(0)
+    else:
+        proxmox_node = questionary.text(
+            "Proxmox node FQDN (parent host for this LXC):",
+            validate=validate_fqdn,
+        ).ask()
+        if proxmox_node is None:
+            sys.exit(0)
 
     fqdn_hint = f"  (e.g. myapp.{default_suffix})" if default_suffix else ""
     fqdn = questionary.text(

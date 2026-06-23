@@ -1,5 +1,7 @@
 proxmox:
-  host: your-proxmox-node.lab.home  # Default node shown in the pre-deploy prompt
+  hosts:
+    - your-proxmox-node-a.lab.home
+    - your-proxmox-node-b.lab.home
 
 netbox:
   url: https://netbox.lab.home
