@@ -248,16 +248,14 @@ def phase1_hardware(cfg: dict, proxmox_node: str) -> dict:
     defaults = cfg.get("defaults", {})
     prox_cfg = cfg["proxmox"]
 
-    # ── Query Proxmox storage via REST API ───────────────────────────────────
-    from lib.proxmox_api import ProxmoxAPI
-
+    # ── Query Proxmox storage via SSH login shell ────────────────────────────
     all_storage: list[dict] = []
     nfs_storage: list[dict] = []
     try:
-        console.print(f"  Querying storage on [bold]{proxmox_node}[/bold] via API…")
-        pve = ProxmoxAPI(proxmox_node, prox_cfg["api_token_id"], prox_cfg["api_token_secret"])
-        all_storage = pve.list_storage()
-        pve.close()
+        console.print(f"  Querying storage on [bold]{proxmox_node}[/bold]…")
+        ssh = ProxmoxSSH(proxmox_node, prox_cfg["ssh_user"], prox_cfg["ssh_key"])
+        all_storage = ssh.list_storage()
+        ssh.close()
         if not all_storage:
             console.print("  [yellow]Storage query returned no results — falling back to manual entry.[/yellow]")
         else:
@@ -268,8 +266,7 @@ def phase1_hardware(cfg: dict, proxmox_node: str) -> dict:
             else:
                 console.print("  [yellow]No NFS/CIFS storage pools found on this node.[/yellow]")
     except Exception as e:
-        console.print(f"  [red]Could not query Proxmox API:[/red] {e}")
-        console.print(f"  [dim]Check api_token_id and api_token_secret in config.yaml.[/dim]")
+        console.print(f"  [red]Could not connect to Proxmox:[/red] {e}")
         console.print("  Falling back to manual entry.")
 
     # ── OS disk storage ──────────────────────────────────────────────────────
@@ -466,14 +463,8 @@ def phase2_create_lxc(cfg: dict, meta: dict, ip_info: dict, hw: dict) -> bool:
 
     # Apply bind mounts if any were configured
     if hw.get("mounts"):
-        from lib.proxmox_api import ProxmoxAPI
         node_short = meta["proxmox_node"].split(".")[0]
-        try:
-            pve = ProxmoxAPI(meta["proxmox_node"], prox_cfg["api_token_id"], prox_cfg["api_token_secret"])
-            vmid = pve.find_container_id(node_short, meta["hostname"])
-            pve.close()
-        except Exception:
-            vmid = None
+        vmid = ssh.find_container_id(node_short, meta["hostname"])
         if vmid:
             console.print(f"  Applying {len(hw['mounts'])} bind mount(s) to VMID {vmid}…")
             errors = ssh.set_container_mounts(vmid, hw["mounts"])
