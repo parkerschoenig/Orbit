@@ -14,12 +14,14 @@ class NPMPlusClient:
         )
         resp.raise_for_status()
         data = resp.json()
-        # Standard NPM returns {"token": "..."}; some builds wrap it in {"data": {...}}
+        # Standard NPM returns {"token": "..."}
         if "token" in data:
             return data["token"]
         if "data" in data and "token" in data["data"]:
             return data["data"]["token"]
-        raise ValueError(f"Could not find token in NPMplus login response: {data}")
+        # NPMplus uses cookie-based auth — the session cookie is stored automatically
+        # by the httpx.Client; no explicit token needed
+        return ""
 
     def close(self):
         self._client.close()
@@ -33,9 +35,10 @@ class NPMPlusClient:
         ssl_forced: bool = False,
         block_exploits: bool = True,
     ) -> dict:
+        headers = {"Authorization": f"Bearer {self._token}"} if self._token else {}
         resp = self._client.post(
             f"{self._base}/api/nginx/proxy-hosts",
-            headers={"Authorization": f"Bearer {self._token}"},
+            headers=headers,
             json={
                 "domain_names": domain_names,
                 "forward_scheme": forward_scheme,
