@@ -68,6 +68,7 @@
 
   handlers:
     - name: Restart sshd
-      ansible.builtin.service:
-        name: "{{ 'ssh' if ansible_os_family == 'Debian' else 'sshd' }}"
-        state: restarted
+      ansible.builtin.shell: |
+        systemctl restart ssh 2>/dev/null || systemctl restart sshd
+      args:
+        executable: /bin/bash
