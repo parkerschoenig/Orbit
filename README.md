@@ -8,7 +8,7 @@ Automation scripts for provisioning new VMs and LXC containers in a Proxmox home
 
 ## Overview
 
-Provisioning is split into two scripts that bracket the manual step of actually creating the VM/LXC in Proxmox:
+Provisioning is split into two scripts that bracket the manual step of actually creating the VM/LXC in Proxmox, plus a third script for keeping SSH access in sync on hosts that already exist:
 
 ```
 pre-deploy.py  →  [create the VM/LXC manually in Proxmox]  →  post-deploy.py
@@ -17,6 +17,8 @@ pre-deploy.py  →  [create the VM/LXC manually in Proxmox]  →  post-deploy.py
 **`pre-deploy.py`** handles everything before the container exists — picking an IP, registering it in DNS/proxy/IPAM, and printing the exact settings to paste into the Proxmox UI.
 
 **`post-deploy.py`** handles everything after — deploying SSH keys and hardening `sshd` via Ansible once the VM/LXC is up.
+
+**`sync-ssh-keys.py`** — run any time you add a new key (e.g. a new device or service like Termix) and need it pushed out to hosts that were already deployed.
 
 ---
 
@@ -54,7 +56,8 @@ cp config.example.yaml config.yaml
 | `netbox` | URL + API token |
 | `adguard` | URL, credentials, `dns_target` (where rewrites point), `dns_server` (shown to you as the DNS to set in new VMs) |
 | `npmplus` | URL, credentials, `ssl_certificate` to auto-attach to new proxy hosts |
-| `ssh_keys` | List of public key paths to deploy via `post-deploy.py` |
+| `ssh_keys` | List of public key paths to deploy via `post-deploy.py` and `sync-ssh-keys.py` |
+| `hosts` | List of existing VM/LXC hostnames or IPs for `sync-ssh-keys.py` to check/update |
 | `defaults` | Default CPU/RAM/disk values pre-filled in prompts |
 
 ---
@@ -105,6 +108,34 @@ python3 post-deploy.py
 6. Restarts `sshd`.
 
 After this runs, the VM/LXC is only accessible via key auth.
+
+---
+
+## sync-ssh-keys.py
+
+Run this any time you add a new key to `ssh_keys` in `config.yaml` (e.g. a new
+device, or a service like Termix that needs SSH access to your hosts) and want
+it pushed out to hosts that were already deployed.
+
+```bash
+python3 sync-ssh-keys.py                # sync every host in config.yaml
+python3 sync-ssh-keys.py 192.168.1.50   # sync a single host
+python3 sync-ssh-keys.py --dry-run      # show what would change, without applying it
+```
+
+### What it does
+
+1. Connects to each host in `hosts` (config.yaml) using your current SSH
+   identity — no password prompt, so hosts must already trust one of your
+   existing keys (e.g. your personal PC or overlord key).
+2. For each key in `ssh_keys`, checks whether that exact line already exists
+   in `/root/.ssh/authorized_keys`.
+3. Appends any missing keys. Keys already present, and any keys not listed in
+   config, are left untouched.
+
+This is additive-only — it never removes or overwrites existing
+`authorized_keys` entries, unlike `post-deploy.py`, which replaces the file
+wholesale on a freshly created VM/LXC.
 
 ---
 

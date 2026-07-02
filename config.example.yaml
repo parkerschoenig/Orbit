@@ -21,7 +21,17 @@ npmplus:
   ssl_certificate: "*.lab.home"  # Certificate to auto-attach to new proxy hosts (leave blank to skip)
 
 ssh_keys:
-  - /home/user/.ssh/id_ed25519.pub  # add as many keys as needed
+  - /home/user/.ssh/id_ed25519.pub          # personal PC
+  - /home/user/.ssh/overlord_ed25519.pub    # overlord
+  - /home/user/.ssh/termix_ed25519.pub      # Termix LXC
+  # add as many keys as needed — post-deploy.py deploys all of these to new
+  # hosts, and sync-ssh-keys.py ensures they're all present on existing ones
+
+hosts:
+  - 192.168.1.50
+  - 192.168.1.51
+  - app1.lab.home
+  # every existing VM/LXC that sync-ssh-keys.py should check/update
 
 defaults:
   domain_suffix: lab.home

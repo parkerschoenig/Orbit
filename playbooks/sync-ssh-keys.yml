@@ -1,0 +1,38 @@
+---
+# Usage:
+#   ansible-playbook playbooks/sync-ssh-keys.yml \
+#     -i <ip1>,<ip2>,... \
+#     -e "ssh_keys_file=/tmp/keys.pub"
+#
+# Ensures every key in ssh_keys_file is present in /root/.ssh/authorized_keys
+# on each target host. Existing keys are left untouched — only missing ones
+# are appended.
+
+- name: Sync SSH keys to existing hosts
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Wait for SSH to become available
+      ansible.builtin.wait_for_connection:
+        timeout: 30
+        sleep: 5
+
+    - name: Ensure .ssh directory exists
+      ansible.builtin.file:
+        path: /root/.ssh
+        state: directory
+        mode: "0700"
+        owner: root
+        group: root
+
+    - name: Ensure each configured key is present in authorized_keys
+      ansible.builtin.lineinfile:
+        path: /root/.ssh/authorized_keys
+        line: "{{ item }}"
+        create: true
+        mode: "0600"
+        owner: root
+        group: root
+      loop: "{{ lookup('file', ssh_keys_file).splitlines() }}"
+      loop_control:
+        label: "{{ item[:40] }}..."
