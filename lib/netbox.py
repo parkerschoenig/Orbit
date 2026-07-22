@@ -61,7 +61,7 @@ class NetBoxClient:
         resp.raise_for_status()
         return resp.json()
 
-    def create_interface(self, vm_id: int, name: str = "eth0") -> dict:
+    def create_interface(self, vm_id: int, name: str = "bridge") -> dict:
         resp = self._client.post(
             f"{self._base}/virtualization/interfaces/",
             json={"virtual_machine": vm_id, "name": name},
@@ -91,3 +91,26 @@ class NetBoxClient:
         )
         resp.raise_for_status()
         return resp.json()
+
+    # ── Lookup / deletion ────────────────────────────────────────────────────
+
+    def find_vm_by_name(self, name: str) -> Optional[dict]:
+        resp = self._client.get(f"{self._base}/virtualization/virtual-machines/", params={"name": name})
+        resp.raise_for_status()
+        results = resp.json()["results"]
+        return results[0] if results else None
+
+    def find_ip_by_dns_name(self, dns_name: str) -> Optional[dict]:
+        resp = self._client.get(f"{self._base}/ipam/ip-addresses/", params={"dns_name": dns_name})
+        resp.raise_for_status()
+        results = resp.json()["results"]
+        return results[0] if results else None
+
+    def delete_ip_address(self, ip_id: int):
+        resp = self._client.delete(f"{self._base}/ipam/ip-addresses/{ip_id}/")
+        resp.raise_for_status()
+
+    def delete_virtual_machine(self, vm_id: int):
+        """Deletes the VM and cascades to its interfaces (IP addresses are not cascaded — delete separately)."""
+        resp = self._client.delete(f"{self._base}/virtualization/virtual-machines/{vm_id}/")
+        resp.raise_for_status()

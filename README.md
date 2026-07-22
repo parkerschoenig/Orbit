@@ -20,6 +20,8 @@ pre-deploy.py  →  [create the VM/LXC manually in Proxmox]  →  post-deploy.py
 
 **`sync-ssh-keys.py`** — run any time you add a new key (e.g. a new device or service like Termix) and need it pushed out to hosts that were already deployed.
 
+**`decommission.py`** — run after you manually delete a VM/LXC in Proxmox, to clean up its leftover NetBox, AdGuard, and NPMplus entries.
+
 ---
 
 ## Prerequisites
@@ -136,6 +138,34 @@ python3 sync-ssh-keys.py --dry-run      # show what would change, without applyi
 This is additive-only — it never removes or overwrites existing
 `authorized_keys` entries, unlike `post-deploy.py`, which replaces the file
 wholesale on a freshly created VM/LXC.
+
+---
+
+## decommission.py
+
+Proxmox deletion is still manual — this script only cleans up the supporting
+services afterward.
+
+```bash
+python3 decommission.py myapp.lab.pshl.app
+# or omit the FQDN to be prompted
+python3 decommission.py
+# preview what would be removed without changing anything
+python3 decommission.py myapp.lab.pshl.app --dry-run
+```
+
+### What it does
+
+1. Looks up the FQDN in NetBox (VM entry + IP address by `dns_name`), AdGuard
+   (DNS rewrite), and NPMplus (proxy host by domain).
+2. Shows a summary of everything found. If nothing matches, it exits without
+   asking for confirmation.
+3. Asks for explicit confirmation before removing anything (defaults to no).
+4. Deletes the AdGuard rewrite, the NPMplus proxy host, then the NetBox IP
+   address and VM entry, reporting each step.
+
+It does **not** touch Proxmox — delete the VM/LXC there yourself, before or
+after running this.
 
 ---
 

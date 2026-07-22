@@ -81,3 +81,26 @@ class NPMPlusClient:
         )
         resp.raise_for_status()
         return resp.json()
+
+    def find_proxy_host_id(self, domain: str) -> int | None:
+        """Find a proxy host ID by matching a domain against its domain_names."""
+        resp = self._client.get(
+            f"{self._base}/api/nginx/proxy-hosts",
+            headers=self._auth_headers,
+        )
+        resp.raise_for_status()
+        hosts = resp.json()
+        if isinstance(hosts, dict) and "data" in hosts:
+            hosts = hosts["data"]
+        domain_lower = domain.lower()
+        for host in hosts:
+            if domain_lower in [d.lower() for d in host.get("domain_names", [])]:
+                return host["id"]
+        return None
+
+    def delete_proxy_host(self, host_id: int):
+        resp = self._client.delete(
+            f"{self._base}/api/nginx/proxy-hosts/{host_id}",
+            headers=self._auth_headers,
+        )
+        resp.raise_for_status()

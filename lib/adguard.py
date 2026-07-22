@@ -26,3 +26,15 @@ class AdGuardClient:
 
     def rewrite_exists(self, domain: str) -> bool:
         return any(r["domain"] == domain for r in self.list_rewrites())
+
+    def find_rewrite(self, domain: str) -> dict | None:
+        return next((r for r in self.list_rewrites() if r["domain"] == domain), None)
+
+    def remove_rewrite(self, domain: str, answer: str):
+        """Delete a DNS rewrite rule. AdGuard's API requires the exact domain+answer pair."""
+        resp = self._client.post(
+            f"{self._base}/control/rewrite/delete",
+            json={"domain": domain, "answer": answer},
+            auth=self._auth,
+        )
+        resp.raise_for_status()
